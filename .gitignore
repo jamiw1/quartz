@@ -1,0 +1,9 @@
+local.db
+local.db-shm
+local.db-wal
+quartz.db
+uploads/
+data/
+
+quartz
+*.exe

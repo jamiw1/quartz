@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>quartz</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+  </head>
+  <body>
+    <style>
+      :root,
+      p {
+        font-family:
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          Roboto,
+          Oxygen,
+          Ubuntu,
+          Cantarell,
+          "Open Sans",
+          "Helvetica Neue",
+          sans-serif;
+        font-size: 11pt;
+      }
+      .parent-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100dvh;
+      }
+    </style>
+    <div class="parent-container">
+      <div style="display: flex; flex-direction: column; gap: 8pt">
+        <div>
+          <input id="file-input" type="file" />
+          <button id="upload-btn">upload</button>
+        </div>
+        <div style="display: flex; align-items: center; gap: 4pt">
+          <span>
+            <button id="copy-link" onclick="linkbutton_onclick()">
+              copy link
+            </button>
+          </span>
+          <p id="link-text"></p>
+        </div>
+        <canvas
+          id="qr-code"
+          width="100"
+          height="100"
+          style="width: 100px; height: 100px; display: none"
+        ></canvas>
+      </div>
+    </div>
+    <script>
+      var link = "";
+
+      var fileInput = document.getElementById("file-input");
+      var uploadBtn = document.getElementById("upload-btn");
+      var linkbutton = document.getElementById("copy-link");
+      var linktext = document.getElementById("link-text");
+      var qrcode = document.getElementById("qr-code");
+
+      const qr = new QRious({
+        element: qrcode,
+        value: "",
+        size: 100,
+        background: "#ffffff",
+        foreground: "#000000",
+        level: "L",
+      });
+
+      uploadBtn.onclick = function () {
+        var files = fileInput.files;
+        if (files.length === 0) {
+          alert("please select a file first.");
+          return;
+        }
+
+        var file = files[0];
+        var formData = new FormData();
+        formData.append("document", file);
+
+        uploadBtn.disabled = true;
+        uploadBtn.textContent = "uploading...";
+
+        fetch("/upload", {
+          method: "POST",
+          body: formData,
+        })
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error("upload failed with status: " + response.status);
+            }
+            return response.json();
+          })
+          .then((data) => {
+            if (data.status === "success" && data.file_id) {
+              link = window.location.origin + "/download/" + data.file_id;
+              linktext.textContent = "" + link;
+
+              qr.value = link;
+              qrcode.style.display = "block";
+
+              uploadBtn.textContent = "uploaded!";
+              setTimeout(() => {
+                uploadBtn.textContent = "upload";
+              }, 2000);
+            } else {
+              throw new Error("invalid response format");
+            }
+          })
+          .catch((err) => {
+            console.error("upload error:", err);
+            alert("upload failed: " + err.message);
+            uploadBtn.textContent = "upload";
+          })
+          .finally(() => {
+            uploadBtn.disabled = false;
+          });
+      };
+
+      function linkbutton_onclick() {
+        if (!link) {
+          alert("please upload a file first to copy its link.");
+          return;
+        }
+        navigator.clipboard
+          .writeText(link)
+          .then(() => {
+            linkbutton.textContent = "copied!";
+            setTimeout(() => {
+              linkbutton.textContent = "copy link";
+            }, 2000);
+          })
+          .catch((err) => console.error("clipboard write failed: ", err));
+      }
+    </script>
+  </body>
+</html>

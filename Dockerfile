@@ -1,4 +1,4 @@
-FROM golang:1.24-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 WORKDIR /src
 
@@ -11,7 +11,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /quartz .
 
 FROM alpine:3.21
 
-RUN addgroup -S quartz && adduser -S -G quartz quartz
+RUN addgroup -g 568 quartz && adduser -u 568 -S -G quartz quartz
 
 WORKDIR /app
 
@@ -20,7 +20,7 @@ COPY --chown=quartz:quartz public/ ./public/
 
 RUN mkdir -p /data && chown quartz:quartz /data
 
-USER quartz
+# USER quartz
 
 EXPOSE 3000
 

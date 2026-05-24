@@ -33,9 +33,6 @@ func sanitizeFilename(s string) string {
 }
 
 func main() {
-	// DATA_DIR is where the database and uploads folder live.
-	// Set this to a mounted volume path in Docker (e.g. /data).
-	// Defaults to the current directory for local development.
 	dataDir := os.Getenv("DATA_DIR")
 	if dataDir == "" {
 		dataDir = "."
@@ -103,6 +100,40 @@ func main() {
 
 	app.Get("/download/:id", func(c fiber.Ctx) error {
 		fileID := c.Params("id")
+
+		userAgent := c.Get("User-Agent")
+		isBot := strings.Contains(strings.ToLower(userAgent), "discordbot") ||
+			strings.Contains(strings.ToLower(userAgent), "telegrambot") ||
+			strings.Contains(strings.ToLower(userAgent), "slackbot")
+
+		if isBot {
+			f, err := GetFile(fileID)
+			if err == sql.ErrNoRows {
+				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "file not found"})
+			} else if err != nil {
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "database lookup failed"})
+			}
+
+			if time.Now().Unix() > f.Expiry {
+				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "file not found"})
+			}
+
+			c.Set("Content-Type", "text/html")
+			safeName := sanitizeFilename(f.OriginalName)
+			return c.SendString(fmt.Sprintf(`<!DOCTYPE html>
+				<html>
+				<head>
+					<meta charset="utf-8">
+					<title>%s</title>
+					<meta property="og:title" content="%s" />
+					<meta property="og:description" content="file: %s. careful, this is a one-time download link!" />
+					<meta name="twitter:card" content="summary" />
+				</head>
+				<body>
+					<p>file: %s</p>
+				</body>
+				</html>`, safeName, safeName, safeName, safeName))
+		}
 
 		f, err := ClaimFile(fileID)
 		if err == sql.ErrNoRows {

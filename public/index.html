@@ -37,6 +37,7 @@
           <input id="file-input" type="file" />
           <button id="upload-btn">upload</button>
         </div>
+        <progress id="progress-bar" value="0" max="100" style="display: none; margin-top: 8px; width: 100%;"></progress>
         <div style="display: flex; align-items: center; gap: 4pt">
           <span>
             <button id="copy-link" onclick="linkbutton_onclick()">
@@ -85,40 +86,62 @@
         uploadBtn.disabled = true;
         uploadBtn.textContent = "uploading...";
 
-        fetch("/upload", {
-          method: "POST",
-          body: formData,
-        })
-          .then((response) => {
-            if (!response.ok) {
-              throw new Error("upload failed with status: " + response.status);
-            }
-            return response.json();
-          })
-          .then((data) => {
-            if (data.status === "success" && data.file_id) {
-              link = window.location.origin + "/download/" + data.file_id;
-              linktext.textContent = "" + link;
+        var progressBar = document.getElementById("progress-bar");
 
-              qr.value = link;
-              qrcode.style.display = "block";
+        progressBar.style.display = "inline-block";
+        progressBar.value = 0;
 
-              uploadBtn.textContent = "uploaded!";
-              setTimeout(() => {
-                uploadBtn.textContent = "upload";
-              }, 2000);
-            } else {
-              throw new Error("invalid response format");
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", "/upload", true);
+
+        xhr.upload.onprogress = function (e) {
+          if (e.lengthComputable) {
+            var percentComplete = Math.round((e.loaded / e.total) * 100);
+            progressBar.value = percentComplete;
+          }
+        };
+
+        xhr.onload = function () {
+          progressBar.style.display = "none";
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              var data = JSON.parse(xhr.responseText);
+              if (data.status === "success" && data.file_id) {
+                link = window.location.origin + "/download/" + data.file_id;
+                linktext.textContent = "" + link;
+
+                qr.value = link;
+                qrcode.style.display = "block";
+
+                uploadBtn.textContent = "uploaded!";
+                setTimeout(() => {
+                  uploadBtn.textContent = "upload";
+                }, 2000);
+              } else {
+                throw new Error("invalid response format");
+              }
+            } catch (err) {
+              console.error("upload error:", err);
+              alert("upload failed: " + err.message);
+              uploadBtn.textContent = "upload";
             }
-          })
-          .catch((err) => {
-            console.error("upload error:", err);
-            alert("upload failed: " + err.message);
+          } else {
+            console.error("upload failed with status:", xhr.status);
+            alert("upload failed with status: " + xhr.status);
             uploadBtn.textContent = "upload";
-          })
-          .finally(() => {
-            uploadBtn.disabled = false;
-          });
+          }
+          uploadBtn.disabled = false;
+        };
+
+        xhr.onerror = function () {
+          progressBar.style.display = "none";
+          console.error("upload network error");
+          alert("upload failed due to network error");
+          uploadBtn.textContent = "upload";
+          uploadBtn.disabled = false;
+        };
+
+        xhr.send(formData);
       };
 
       function linkbutton_onclick() {

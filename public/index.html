@@ -37,15 +37,12 @@
           <input id="file-input" type="file" />
           <button id="upload-btn">upload</button>
         </div>
-        <progress id="progress-bar" value="0" max="100" style="display: none; margin-top: 8px; width: 100%;"></progress>
-        <div style="display: flex; align-items: center; gap: 4pt">
-          <span>
-            <button id="copy-link" onclick="linkbutton_onclick()">
-              copy link
-            </button>
-          </span>
-          <p id="link-text"></p>
+        <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 4px;">
+          <input id="link-count" type="range" min="1" max="100" value="1" style="width: 150px;" />
+          <span id="link-count-label" style="font-size: 10pt; color: #555;">Links: 1</span>
         </div>
+        <progress id="progress-bar" value="0" max="100" style="display: none; margin-top: 8px; width: 100%;"></progress>
+        <div id="links-container" style="display: flex; flex-direction: column; gap: 8pt; margin-top: 8pt;"></div>
         <canvas
           id="qr-code"
           width="100"
@@ -55,13 +52,15 @@
       </div>
     </div>
     <script>
-      var link = "";
-
       var fileInput = document.getElementById("file-input");
       var uploadBtn = document.getElementById("upload-btn");
-      var linkbutton = document.getElementById("copy-link");
-      var linktext = document.getElementById("link-text");
       var qrcode = document.getElementById("qr-code");
+      var linkCountInput = document.getElementById("link-count");
+      var linkCountLabel = document.getElementById("link-count-label");
+
+      linkCountInput.oninput = function () {
+        linkCountLabel.textContent = "Links: " + this.value;
+      };
 
       const qr = new QRious({
         element: qrcode,
@@ -82,14 +81,18 @@
         var file = files[0];
         var formData = new FormData();
         formData.append("document", file);
+        formData.append("link_count", linkCountInput.value);
 
         uploadBtn.disabled = true;
         uploadBtn.textContent = "uploading...";
 
         var progressBar = document.getElementById("progress-bar");
-
         progressBar.style.display = "inline-block";
         progressBar.value = 0;
+
+        var linksContainer = document.getElementById("links-container");
+        linksContainer.innerHTML = "";
+        qrcode.style.display = "none";
 
         var xhr = new XMLHttpRequest();
         xhr.open("POST", "/upload", true);
@@ -106,12 +109,43 @@
           if (xhr.status >= 200 && xhr.status < 300) {
             try {
               var data = JSON.parse(xhr.responseText);
-              if (data.status === "success" && data.file_id) {
-                link = window.location.origin + "/download/" + data.file_id;
-                linktext.textContent = "" + link;
+              if (data.status === "success" && data.links) {
+                data.links.forEach(function (linkId) {
+                  var linkUrl = window.location.origin + "/download/" + linkId;
 
-                qr.value = link;
-                qrcode.style.display = "block";
+                  var linkDiv = document.createElement("div");
+                  linkDiv.style.display = "flex";
+                  linkDiv.style.alignItems = "center";
+                  linkDiv.style.gap = "8px";
+
+                  var a = document.createElement("a");
+                  a.href = linkUrl;
+                  a.textContent = linkUrl;
+                  a.target = "_blank";
+
+                  var copyBtn = document.createElement("button");
+                  copyBtn.textContent = "copy";
+                  copyBtn.onclick = function () {
+                    navigator.clipboard.writeText(linkUrl).then(function () {
+                      copyBtn.textContent = "copied!";
+                      setTimeout(function () {
+                        copyBtn.textContent = "copy";
+                      }, 2000);
+                    });
+                  };
+
+                  var qrBtn = document.createElement("button");
+                  qrBtn.textContent = "show QR";
+                  qrBtn.onclick = function () {
+                    qr.value = linkUrl;
+                    qrcode.style.display = "block";
+                  };
+
+                  linkDiv.appendChild(a);
+                  linkDiv.appendChild(copyBtn);
+                  linkDiv.appendChild(qrBtn);
+                  linksContainer.appendChild(linkDiv);
+                });
 
                 uploadBtn.textContent = "uploaded!";
                 setTimeout(() => {
@@ -143,22 +177,6 @@
 
         xhr.send(formData);
       };
-
-      function linkbutton_onclick() {
-        if (!link) {
-          alert("please upload a file first to copy its link.");
-          return;
-        }
-        navigator.clipboard
-          .writeText(link)
-          .then(() => {
-            linkbutton.textContent = "copied!";
-            setTimeout(() => {
-              linkbutton.textContent = "copy link";
-            }, 2000);
-          })
-          .catch((err) => console.error("clipboard write failed: ", err));
-      }
     </script>
   </body>
 </html>

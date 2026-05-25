@@ -2,6 +2,8 @@ local.db
 local.db-shm
 local.db-wal
 quartz.db
+quartz.db-shm
+quartz.db-wal
 uploads/
 data/
 

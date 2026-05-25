@@ -49,12 +49,18 @@ func main() {
 	}
 
 	app := fiber.New(fiber.Config{
-		BodyLimit: 150 * 1024 * 1024, // 150 MB
+		BodyLimit:   150 * 1024 * 1024,
+		TrustProxy:  true,
+		ProxyHeader: "X-Forwarded-For",
 	})
+
+	app.Use(limiter.New(limiter.Config{
+		Max:        100,
+		Expiration: 1 * time.Minute,
+	}))
 
 	app.Use("/", static.New("./public"))
 
-	// max 5 requests per minute per IP
 	app.Use("/upload", limiter.New(limiter.Config{
 		Max:        5,
 		Expiration: 1 * time.Minute,
@@ -64,6 +70,14 @@ func main() {
 		file, err := c.FormFile("document")
 		if err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "missing file payload"})
+		}
+
+		linkCount := 1
+		if lcStr := c.FormValue("link_count"); lcStr != "" {
+			var val int
+			if _, err := fmt.Sscanf(lcStr, "%d", &val); err == nil && val >= 1 && val <= 100 {
+				linkCount = val
+			}
 		}
 
 		fileID := uuid.New().String()
@@ -86,15 +100,20 @@ func main() {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to write file"})
 		}
 
+		linkIDs := make([]string, linkCount)
+		for i := 0; i < linkCount; i++ {
+			linkIDs[i] = uuid.New().String()
+		}
+
 		expiryTime := time.Now().Add(30 * 24 * time.Hour).Unix()
-		if err := SaveFile(fileID, file.Filename, storagePath, expiryTime); err != nil {
+		if err := SaveFileWithLinks(fileID, file.Filename, storagePath, expiryTime, linkIDs); err != nil {
 			_ = os.Remove(storagePath)
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to log file meta"})
 		}
 
 		return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-			"status":  "success",
-			"file_id": fileID,
+			"status": "success",
+			"links":  linkIDs,
 		})
 	})
 
@@ -107,7 +126,7 @@ func main() {
 			strings.Contains(strings.ToLower(userAgent), "slackbot")
 
 		if isBot {
-			f, err := GetFile(fileID)
+			f, err := GetFileByLink(fileID)
 			if err == sql.ErrNoRows {
 				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "file not found"})
 			} else if err != nil {
@@ -135,7 +154,7 @@ func main() {
 				</html>`, safeName, safeName, safeName, safeName))
 		}
 
-		f, err := ClaimFile(fileID)
+		f, isLastLink, err := ClaimLink(fileID)
 		if err == sql.ErrNoRows {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "file not found"})
 		} else if err != nil {
@@ -143,7 +162,9 @@ func main() {
 		}
 
 		if time.Now().Unix() > f.Expiry {
-			_ = os.Remove(f.Path)
+			if isLastLink {
+				_ = os.Remove(f.Path)
+			}
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "file not found"})
 		}
 
@@ -160,7 +181,9 @@ func main() {
 		return c.SendStreamWriter(func(w *bufio.Writer) {
 			defer func() {
 				_ = diskFile.Close()
-				_ = os.Remove(f.Path)
+				if isLastLink {
+					_ = os.Remove(f.Path)
+				}
 			}()
 			if _, err := io.Copy(w, diskFile); err != nil {
 				log.Printf("warning: error streaming file %s: %v", f.Path, err)

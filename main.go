@@ -62,7 +62,7 @@ func main() {
 	app.Use("/", static.New("./public"))
 
 	app.Use("/upload", limiter.New(limiter.Config{
-		Max:        5,
+		Max:        3,
 		Expiration: 1 * time.Minute,
 	}))
 
@@ -105,7 +105,7 @@ func main() {
 			linkIDs[i] = uuid.New().String()
 		}
 
-		expiryTime := time.Now().Add(30 * 24 * time.Hour).Unix()
+		expiryTime := time.Now().Add(5 * 24 * time.Hour).Unix()
 		if err := SaveFileWithLinks(fileID, file.Filename, storagePath, expiryTime, linkIDs); err != nil {
 			_ = os.Remove(storagePath)
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to log file meta"})
@@ -145,13 +145,13 @@ func main() {
 					<meta charset="utf-8">
 					<title>%s</title>
 					<meta property="og:title" content="%s" />
-					<meta property="og:description" content="file: %s. careful, this is a one-time download link!" />
+					<meta property="og:description" content="quartz - careful, this is a one-time download link!" />
 					<meta name="twitter:card" content="summary" />
 				</head>
 				<body>
 					<p>file: %s</p>
 				</body>
-				</html>`, safeName, safeName, safeName, safeName))
+				</html>`, safeName, safeName, safeName))
 		}
 
 		f, isLastLink, err := ClaimLink(fileID)
